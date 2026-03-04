@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd:*)",
+      "Bash(head:*)",
+      "Bash(docker version:*)",
+      "Bash(npx tsx:*)"
+    ]
+  }
+}

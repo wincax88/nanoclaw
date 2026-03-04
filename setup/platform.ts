@@ -5,13 +5,14 @@ import { execSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 
-export type Platform = 'macos' | 'linux' | 'unknown';
+export type Platform = 'macos' | 'linux' | 'windows' | 'unknown';
 export type ServiceManager = 'launchd' | 'systemd' | 'none';
 
 export function getPlatform(): Platform {
   const platform = os.platform();
   if (platform === 'darwin') return 'macos';
   if (platform === 'linux') return 'linux';
+  if (platform === 'win32') return 'windows';
   return 'unknown';
 }
 
@@ -34,7 +35,7 @@ export function isHeadless(): boolean {
   if (getPlatform() === 'linux') {
     return !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY;
   }
-  // macOS is never headless in practice (even SSH sessions can open URLs)
+  // macOS and Windows are never headless in practice
   return false;
 }
 
@@ -58,6 +59,10 @@ export function openBrowser(url: string): boolean {
     const platform = getPlatform();
     if (platform === 'macos') {
       execSync(`open ${JSON.stringify(url)}`, { stdio: 'ignore' });
+      return true;
+    }
+    if (platform === 'windows') {
+      execSync(`start "" ${JSON.stringify(url)}`, { stdio: 'ignore', shell: 'cmd.exe' });
       return true;
     }
     if (platform === 'linux') {
@@ -108,7 +113,8 @@ export function getNodePath(): string {
 
 export function commandExists(name: string): boolean {
   try {
-    execSync(`command -v ${name}`, { stdio: 'ignore' });
+    const cmd = process.platform === 'win32' ? `where ${name}` : `command -v ${name}`;
+    execSync(cmd, { stdio: 'ignore' });
     return true;
   } catch {
     return false;
