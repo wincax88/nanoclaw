@@ -408,14 +408,14 @@ export async function processTaskIpc(
       // Resolve content file path relative to group folder
       const groupDir = path.join(process.cwd(), 'groups', sourceGroup);
       const contentPath = data.contentFile.startsWith('/')
-        ? path.join(groupDir, data.contentFile.replace(/^\/workspace\/group\//, ''))
+        ? path.join(
+            groupDir,
+            data.contentFile.replace(/^\/workspace\/group\//, ''),
+          )
         : path.join(groupDir, data.contentFile);
 
       if (!fs.existsSync(contentPath)) {
-        logger.error(
-          { contentPath },
-          'Zhihu publish: content file not found',
-        );
+        logger.error({ contentPath }, 'Zhihu publish: content file not found');
         if (data.notifyJid) {
           await deps.sendMessage(
             data.notifyJid,
@@ -437,15 +437,22 @@ export async function processTaskIpc(
           'zhihu-publisher.ts',
         );
         const publishParts = [
-          'npx', 'tsx', `"${scriptPath}"`,
-          '--title', `"${data.title}"`,
-          '--content', `"${contentPath}"`,
+          'npx',
+          'tsx',
+          `"${scriptPath}"`,
+          '--title',
+          `"${data.title}"`,
+          '--content',
+          `"${contentPath}"`,
         ];
 
         // Resolve cover image path if provided
         if (data.coverImage) {
           const coverPath = data.coverImage.startsWith('/')
-            ? path.join(groupDir, data.coverImage.replace(/^\/workspace\/group\//, ''))
+            ? path.join(
+                groupDir,
+                data.coverImage.replace(/^\/workspace\/group\//, ''),
+              )
             : path.join(groupDir, data.coverImage);
           if (fs.existsSync(coverPath)) {
             publishParts.push('--cover', `"${coverPath}"`);
@@ -468,7 +475,10 @@ export async function processTaskIpc(
         try {
           result = JSON.parse(resultLine);
         } catch {
-          result = { success: false, error: `Unexpected output: ${resultLine}` };
+          result = {
+            success: false,
+            error: `Unexpected output: ${resultLine}`,
+          };
         }
 
         if (result.success) {
