@@ -4,7 +4,18 @@
       "Bash(cd:*)",
       "Bash(head:*)",
       "Bash(docker version:*)",
-      "Bash(npx tsx:*)"
+      "Bash(npx tsx:*)",
+      "Bash(xargs grep -l \"message\\\\|history\\\\|context\\\\|compaction\\\\|session\")",
+      "Bash(npm run build)",
+      "Bash(bash container/build.sh)",
+      "Bash(bash:*)",
+      "Bash(ls:*)",
+      "Bash(xargs kill:*)",
+      "Bash(docker run:*)",
+      "Bash(npx playwright:*)",
+      "Bash(npm install:*)",
+      "Bash(powershell:*)",
+      "Bash(tasklist:*)"
     ]
   }
 }

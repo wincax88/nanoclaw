@@ -1,3 +1,4 @@
+import { execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 
@@ -170,6 +171,11 @@ export async function processTaskIpc(
     trigger?: string;
     requiresTrigger?: boolean;
     containerConfig?: RegisteredGroup['containerConfig'];
+    // For host_publish_zhihu
+    title?: string;
+    contentFile?: string;
+    coverImage?: string;
+    notifyJid?: string;
   },
   sourceGroup: string, // Verified identity from IPC directory
   isMain: boolean, // Verified from directory path
@@ -380,6 +386,123 @@ export async function processTaskIpc(
         );
       }
       break;
+
+    case 'host_publish_zhihu': {
+      // Only main group can request host-side publishing
+      if (!isMain) {
+        logger.warn(
+          { sourceGroup },
+          'Unauthorized host_publish_zhihu attempt blocked',
+        );
+        break;
+      }
+
+      if (!data.title || !data.contentFile) {
+        logger.warn(
+          { data },
+          'Invalid host_publish_zhihu request - missing title or contentFile',
+        );
+        break;
+      }
+
+      // Resolve content file path relative to group folder
+      const groupDir = path.join(process.cwd(), 'groups', sourceGroup);
+      const contentPath = data.contentFile.startsWith('/')
+        ? path.join(groupDir, data.contentFile.replace(/^\/workspace\/group\//, ''))
+        : path.join(groupDir, data.contentFile);
+
+      if (!fs.existsSync(contentPath)) {
+        logger.error(
+          { contentPath },
+          'Zhihu publish: content file not found',
+        );
+        if (data.notifyJid) {
+          await deps.sendMessage(
+            data.notifyJid,
+            `❌ 知乎发布失败：内容文件不存在 ${contentPath}`,
+          );
+        }
+        break;
+      }
+
+      logger.info(
+        { title: data.title, contentPath },
+        'Running host-side Zhihu publisher',
+      );
+
+      try {
+        const scriptPath = path.join(
+          process.cwd(),
+          'scripts',
+          'zhihu-publisher.ts',
+        );
+        const publishParts = [
+          'npx', 'tsx', `"${scriptPath}"`,
+          '--title', `"${data.title}"`,
+          '--content', `"${contentPath}"`,
+        ];
+
+        // Resolve cover image path if provided
+        if (data.coverImage) {
+          const coverPath = data.coverImage.startsWith('/')
+            ? path.join(groupDir, data.coverImage.replace(/^\/workspace\/group\//, ''))
+            : path.join(groupDir, data.coverImage);
+          if (fs.existsSync(coverPath)) {
+            publishParts.push('--cover', `"${coverPath}"`);
+            logger.info({ coverPath }, 'Including cover image for Zhihu');
+          } else {
+            logger.warn({ coverPath }, 'Zhihu cover image not found, skipping');
+          }
+        }
+
+        const stdout = execSync(publishParts.join(' '), {
+          timeout: 120000,
+          cwd: process.cwd(),
+          encoding: 'utf-8',
+        });
+
+        // Parse the JSON result from the last line of stdout
+        const lines = stdout.trim().split('\n');
+        const resultLine = lines[lines.length - 1];
+        let result: { success: boolean; draftUrl?: string; error?: string };
+        try {
+          result = JSON.parse(resultLine);
+        } catch {
+          result = { success: false, error: `Unexpected output: ${resultLine}` };
+        }
+
+        if (result.success) {
+          logger.info(
+            { draftUrl: result.draftUrl },
+            'Zhihu draft created successfully',
+          );
+          if (data.notifyJid) {
+            await deps.sendMessage(
+              data.notifyJid,
+              `✅ 知乎草稿已创建\n📝 标题: ${data.title}\n🔗 ${result.draftUrl || '请在知乎草稿箱查看'}`,
+            );
+          }
+        } else {
+          logger.error({ error: result.error }, 'Zhihu publisher failed');
+          if (data.notifyJid) {
+            await deps.sendMessage(
+              data.notifyJid,
+              `❌ 知乎发布失败: ${result.error}`,
+            );
+          }
+        }
+      } catch (err) {
+        const error = err instanceof Error ? err.message : String(err);
+        logger.error({ error }, 'Zhihu publisher execution failed');
+        if (data.notifyJid) {
+          await deps.sendMessage(
+            data.notifyJid,
+            `❌ 知乎发布脚本执行失败: ${error}`,
+          );
+        }
+      }
+      break;
+    }
 
     default:
       logger.warn({ type: data.type }, 'Unknown IPC task type');

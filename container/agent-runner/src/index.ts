@@ -477,11 +477,22 @@ async function runQuery(
       resultCount++;
       const textResult = 'result' in message ? (message as { result?: string }).result : null;
       log(`Result #${resultCount}: subtype=${message.subtype}${textResult ? ` text=${textResult.slice(0, 200)}` : ''}`);
-      writeOutput({
-        status: 'success',
-        result: textResult || null,
-        newSessionId
-      });
+      // Detect API errors returned as result messages (not thrown as exceptions).
+      // Don't persist the session ID when the history is corrupted.
+      const isApiError = textResult?.includes('invalid_request_error') && textResult?.includes('tool_use');
+      if (isApiError) {
+        writeOutput({
+          status: 'error',
+          result: null,
+          error: textResult || undefined,
+        });
+      } else {
+        writeOutput({
+          status: 'success',
+          result: textResult || null,
+          newSessionId,
+        });
+      }
     }
   }
 
@@ -541,7 +552,21 @@ async function main(): Promise<void> {
     while (true) {
       log(`Starting query (session: ${sessionId || 'new'}, resumeAt: ${resumeAt || 'latest'})...`);
 
-      const queryResult = await runQuery(prompt, sessionId, mcpServerPath, containerInput, sdkEnv, resumeAt);
+      let queryResult: Awaited<ReturnType<typeof runQuery>>;
+      try {
+        queryResult = await runQuery(prompt, sessionId, mcpServerPath, containerInput, sdkEnv, resumeAt);
+      } catch (queryErr) {
+        const msg = queryErr instanceof Error ? queryErr.message : String(queryErr);
+        // Corrupted session history (e.g. orphaned tool_result after compaction) — retry without resume
+        if (msg.includes('invalid_request_error') && msg.includes('tool_use') && sessionId) {
+          log(`Session history corrupted, retrying without resume: ${msg.slice(0, 200)}`);
+          sessionId = undefined;
+          resumeAt = undefined;
+          queryResult = await runQuery(prompt, undefined, mcpServerPath, containerInput, sdkEnv, undefined);
+        } else {
+          throw queryErr;
+        }
+      }
       if (queryResult.newSessionId) {
         sessionId = queryResult.newSessionId;
       }
@@ -575,10 +600,12 @@ async function main(): Promise<void> {
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
     log(`Agent error: ${errorMessage}`);
+    // Don't persist session if it caused an API error (corrupted history)
+    const isSessionCorruption = errorMessage.includes('invalid_request_error') && errorMessage.includes('tool_use');
     writeOutput({
       status: 'error',
       result: null,
-      newSessionId: sessionId,
+      newSessionId: isSessionCorruption ? undefined : sessionId,
       error: errorMessage
     });
     process.exit(1);
